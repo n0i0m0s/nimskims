@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ultimate Squid Game Treasure Hunt</title>
+<style>
+body {
+    margin:0;
+    padding:0;
+    font-family:sans-serif;
+    background:#111;
+    color:#fff;
+    min-height:100vh;
+    overflow-y:auto; /* allows scrolling */
+}
+.pulse {
+    position:absolute;
+    top:0; left:0;
+    width:100%; height:100%;
+    background:red;
+    opacity:0;
+    pointer-events:none;
+    z-index:0;
+    animation:heartbeat 1s infinite;
+}
+@keyframes heartbeat{
+    0%{opacity:0;}25%{opacity:0.3;}50%{opacity:0;}75%{opacity:0.3;}100%{opacity:0;}
+}
+.container {
+    background:#222;
+    padding:20px;
+    border-radius:12px;
+    max-width:900px;
+    width:90%;
+    margin:20px auto; /* horizontal centering */
+    box-shadow:0 0 20px #ff0000;
+    position:relative;
+    z-index:1;
+}
+h1{text-align:center;color:#ffdd59;}
+.riddles, .grid {margin-top:20px;}
+.riddle{margin-bottom:12px;padding:10px;border:2px solid #ff3f3f;border-radius:8px;background:#333;transition:0.3s;}
+.riddle button{margin:5px;padding:6px 12px;border:none;border-radius:6px;cursor:pointer;font-weight:600;transition:0.2s;}
+.riddle button:hover{transform:scale(1.1);}
+.riddle.solved{border-color:#00ff99;background:#003300;}
+.grid{display:grid;grid-template-columns:repeat(5,60px);grid-gap:10px;justify-content:center;margin-top:30px;}
+.cell{width:60px;height:60px;background:#440000;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:not-allowed;font-size:24px;font-weight:bold;transition:0.3s;}
+.cell.active{cursor:pointer;background:#bb0000;animation:glow 1.5s infinite alternate;}
+.cell.revealed{background:#222;opacity:0.8;animation:none;}
+.cell.treasure{background:gold;font-size:28px;animation:none;}
+.cell.bigtreasure{background:darkorange;font-size:32px;animation:none;}
+@keyframes glow{0%{box-shadow:0 0 5px #ff0000;}100%{box-shadow:0 0 20px #ff5555;}}
+.status,.hint{margin-top:10px;padding:8px;background:#222;border-radius:6px;text-align:center;}
+.controls{margin-top:12px;text-align:center;}
+.controls button{margin:0 5px;padding:8px 14px;border:none;border-radius:8px;cursor:pointer;background:#ff3f3f;color:#fff;font-weight:600;}
+.controls button.secondary{background:#00ff99;color:#000;}
+.chat-history{margin-top:12px;text-align:center;font-size:12px;}
+input[type=text]{padding:6px;border-radius:6px;border:1px solid #cbd5e1;}
+.timer{margin-top:10px;font-size:18px;font-weight:bold;text-align:center;color:#ff5555;}
+</style>
+</head>
+<body>
+
+<div class="pulse" id="pulse"></div>
+
+<div class="container">
+<h1>🟥 Ultimate Squid Game Treasure Hunt 🟩</h1>
+
+<div id="welcomeScreen">
+<p>Enter your name to start the game:</p>
+<input type="text" id="playerNameInput" placeholder="Your Name">
+<button id="startGameBtn">Start Game</button>
+</div>
+
+<div id="gameScreen" style="display:none;">
+<p class="status" id="levelStatus"></p>
+<p class="timer" id="timerDisplay">03:00</p>
+
+<div class="riddles" id="riddleList"></div>
+<div class="grid" id="grid"></div>
+<div class="hint" id="hint"></div>
+<div class="status" id="gameStatus"></div>
+
+<div class="controls">
+<button id="newGame">New Game</button>
+</div>
+
+<div class="chat-history">AI Chat History: <a href="https://chatgpt.com/share/68ca9eba-4f34-800c-866d-c8dadb8fde6a" target="_blank">Open AI Chat History</a></div>
+</div>
+
+<audio id="music" loop></audio>
+<audio id="heartbeat">
+  <source src="https://www.soundjay.com/misc/sounds/heartbeat-01.mp3" type="audio/mpeg">
+</audio>
+<audio id="treasureSound">
+  <source src="https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3" type="audio/mpeg">
+</audio>
+<audio id="bigTreasureSound">
+  <source src="https://www.soundjay.com/misc/sounds/bell-ringing-04.mp3" type="audio/mpeg">
+</audio>
+
+</div>
+
+<script>
+(function(){
+const suspenseTracks=[
+  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
+  "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3"
+];
+
+const riddles = [
+  {q:"What has to be broken before you can use it?", options:["Egg","Bottle"], answer:"Egg"},
+  {q:"I’m tall when I’m young, short when I’m old. What am I?", options:["Candle","Tree"], answer:"Candle"},
+  {q:"What month has 28 days?", options:["February","All Months"], answer:"All Months"},
+  {q:"Full of holes but holds water?", options:["Sponge","Basket"], answer:"Sponge"},
+  {q:"Question you can never answer yes to?", options:["Are you asleep yet?","Are you awake?"], answer:"Are you asleep yet?"},
+  {q:"Always in front but can't be seen?", options:["Future","Shadow"], answer:"Future"}
+];
+
+const mathQuestions = [
+  {q:"5 + 3 × 2", answer:11},
+  {q:"(8 - 3) × 2 + 6 ÷ 2", answer:13},
+  {q:"12 ÷ (2 + 1) + 4 × 2", answer:12}
+];
+
+let playerName='', level=1, solved=0, unlocked=false, finished=false, treasure={x:0,y:0}, gridSize=5;
+let timerInterval, timeLeft=180;
+
+const riddleListEl=document.getElementById('riddleList');
+const gridEl=document.getElementById('grid');
+const hintEl=document.getElementById('hint');
+const gameStatusEl=document.getElementById('gameStatus');
+const levelStatusEl=document.getElementById('levelStatus');
+const timerDisplay=document.getElementById('timerDisplay');
+const music=document.getElementById('music');
+const heartbeat=document.getElementById('heartbeat');
+const pulse=document.getElementById('pulse');
+const treasureSound=document.getElementById('treasureSound');
+const bigTreasureSound=document.getElementById('bigTreasureSound');
+
+document.getElementById('startGameBtn').addEventListener('click',()=>{
+  const nameInput=document.getElementById('playerNameInput').value.trim();
+  if(!nameInput){alert('Enter your name!');return;}
+  playerName=nameInput;
+  document.getElementById('welcomeScreen').style.display='none';
+  document.getElementById('gameScreen').style.display='block';
+  playRandomTrack();
+  heartbeat.play();
+  startLevel1();
+});
+
+function playRandomTrack(){
+  const track=suspenseTracks[Math.floor(Math.random()*suspenseTracks.length)];
+  music.src=track;
+  music.volume=0.3;
+  music.play().catch(err=>console.log("Music blocked by browser:", err));
+  music.onended=playRandomTrack;
+}
+
+function startTimer(){
+  clearInterval(timerInterval);
+  timeLeft=180;
+  timerDisplay.textContent=formatTime(timeLeft);
+  timerInterval=setInterval(()=>{
+    if(finished){ clearInterval(timerInterval); return; }
+    timeLeft--;
+    timerDisplay.textContent=formatTime(timeLeft);
+    updatePulseSpeed();
+    if(timeLeft<=0){
+      clearInterval(timerInterval);
+      endGame(false);
+    }
+  },1000);
+}
+
+function updatePulseSpeed(){
+  const speed=1 + (180-timeLeft)/180*2;
+  pulse.style.animation=`heartbeat ${1/speed}s infinite`;
+}
+
+function formatTime(sec){ let m=Math.floor(sec/60), s=sec%60; return (m<10?'0':'')+m+':'+(s<10?'0':'')+s; }
+
+function startLevel1(){
+  level=1; solved=0; unlocked=false; finished=false;
+  levelStatusEl.textContent=`${playerName}, Level 1: Solve 5 riddles to unlock Treasure Box (Golden Key)`;
+  hintEl.textContent='Solve riddles to unlock the treasure box.';
+  gameStatusEl.textContent='Treasure locked.';
+  buildRiddles();
+  gridEl.innerHTML='';
+  startTimer();
+}
+
+function buildRiddles(){
+  riddleListEl.innerHTML='';
+  if(level===1){
+    riddles.forEach((r,i)=>{
+      const div=document.createElement('div'); div.className='riddle';
+      const qEl=document.createElement('div'); qEl.textContent=r.q; div.appendChild(qEl);
+      r.options.forEach(opt=>{
+        const btn=document.createElement('button'); btn.textContent=opt;
+        btn.addEventListener('click',()=>checkAnswer(i,opt,div));
+        div.appendChild(btn);
+      });
+      riddleListEl.appendChild(div);
+    });
+  } else if(level===2){
+    mathQuestions.forEach((m,i)=>{
+      const div=document.createElement('div'); div.className='riddle';
+      const qEl=document.createElement('div'); qEl.textContent=m.q; div.appendChild(qEl);
+      const inp=document.createElement('input'); inp.type='text'; inp.placeholder='Your Answer';
+      div.appendChild(inp);
+      const btn=document.createElement('button'); btn.textContent='Check';
+      btn.addEventListener('click',()=>{
+        const val=inp.value.trim();
+        if(val===''){ alert('Enter your answer!'); return; }
+        try{
+          const userAnswer = eval(val);
+          if(userAnswer===m.answer){
+            div.classList.add('solved'); solved++;
+            if(solved===3) unlockBigChest();
+          } else alert('Wrong answer! Try again!');
+        } catch(e){ alert('Invalid expression!'); }
+      });
+      div.appendChild(btn);
+      riddleListEl.appendChild(div);
+    });
+  }
+}
+
+function checkAnswer(i,opt,div){
+  if(div.classList.contains('solved')) return;
+  if(opt===riddles[i].answer){
+    div.classList.add('solved'); solved++;
+    if(solved>=5 && !unlocked) unlockGrid();
+  } else alert('Wrong answer! Try again!');
+}
+
+function unlockGrid(){
+  unlocked=true;
+  treasure.x=Math.floor(Math.random()*gridSize)+1;
+  treasure.y=Math.floor(Math.random()*gridSize)+1;
+  levelStatusEl.textContent=`${playerName}, Level 1: Island unlocked! Find the Treasure Box (Golden Key)`;
+  gridEl.innerHTML='';
+  for(let y=1;y<=gridSize;y++){
+    for(let x=1;x<=gridSize;x++){
+      const cell=document.createElement('div'); cell.className='cell active';
+      cell.dataset.x=x; cell.dataset.y=y;
+      cell.addEventListener('click',onClickCell);
+      gridEl.appendChild(cell);
+    }
+  }
+}
+
+function onClickCell(e){
+  if(finished) return;
+  const el=e.currentTarget; const x=Number(el.dataset.x); const y=Number(el.dataset.y);
+  if(el.classList.contains('revealed')) return;
+  el.classList.add('revealed');
+  if(level===1){
+    if(x===treasure.x && y===treasure.y){
+      el.classList.add('treasure'); el.textContent='🎁';
+      hintEl.textContent='You found the Treasure Box! Golden Key obtained! 🗝️';
+      treasureSound.play();
+      finished=true; clearInterval(timerInterval);
+      setTimeout(()=>startLevel2(),1500);
+    } else {
+      const horiz=x<treasure.x?'EAST':x>treasure.x?'WEST':'';
+      const vert=y<treasure.y?'NORTH':y>treasure.y?'SOUTH':'';
+      hintEl.textContent=`Hint: Treasure is ${vert}${vert&&horiz?'-':''}${horiz}`;
+    }
+  } else if(level===2){
+    if(x===treasure.x && y===treasure.y){
+      el.classList.add('bigtreasure'); el.textContent='🏆';
+      hintEl.textContent='You found the Bigger Chest Box! 🏆 Congratulations, you win!';
+      bigTreasureSound.play();
+      gameStatusEl.textContent='Game Finished. You Win!';
+      finished=true; clearInterval(timerInterval);
+    } else {
+      const horiz=x<treasure.x?'EAST':x>treasure.x?'WEST':'';
+      const vert=y<treasure.y?'NORTH':y>treasure.y?'SOUTH':'';
+      hintEl.textContent=`Hint: Treasure is ${vert}${vert&&horiz?'-':''}${horiz}`;
+    }
+  }
+}
+
+function startLevel2(){
+  level=2; solved=0; unlocked=false; finished=false;
+  riddleListEl.innerHTML=''; gridEl.innerHTML='';
+  levelStatusEl.textContent=`${playerName}, Level 2: Solve 3 math questions (BODMAS) to find the Bigger Chest Box!`;
+  hintEl.textContent='Answer all 3 math questions correctly to unlock the Bigger Chest Box.';
+  gameStatusEl.textContent='';
+  buildRiddles();
+  startTimer();
+}
+
+function unlockBigChest(){
+  unlocked=true; finished=false;
+  levelStatusEl.textContent=`${playerName}, Level 2: All correct! Click grid to find the Bigger Chest Box 🏆`;
+  gridEl.innerHTML='';
+  treasure.x=Math.floor(Math.random()*gridSize)+1;
+  treasure.y=Math.floor(Math.random()*gridSize)+1;
+  for(let y=1;y<=gridSize;y++){
+    for(let x=1;x<=gridSize;x++){
+      const cell=document.createElement('div'); cell.className='cell active';
+      cell.dataset.x=x; cell.dataset.y=y;
+      cell.addEventListener('click',onClickCell);
+      gridEl.appendChild(cell);
+    }
+  }
+}
+
+function endGame(win){
+  finished=true;
+  clearInterval(timerInterval);
+  if(win){
+    gameStatusEl.textContent='Congratulations! You Win! 🏆';
+  } else {
+    gameStatusEl.textContent='Time is up! You Lose! 💀';
+    hintEl.textContent='Try Again.';
+  }
+}
+
+document.getElementById('newGame').addEventListener('click',()=>location.reload());
+})();
+</script>
+</body>
+</html>
